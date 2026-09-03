@@ -4,6 +4,95 @@ from app.main import app
 
 client = TestClient(app)
 
+# =====================================================================
+# Mandatory v1 Contract Compliance Tests (HackWithAMYPO 2026)
+# =====================================================================
+
+def test_v1_health():
+    """Verify GET /api/v1/health returns system status and offline confirmation."""
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert data["offline"] is True
+    assert "message" in data
+    assert "llm_engine" in data
+    assert "embedding_model" in data
+    assert "nli_model" in data
+    assert data["ram_usage_mb"] > 0
+    assert data["ram_limit_mb"] == 8192.0
+
+def test_v1_ask_contract():
+    """
+    Verify POST /api/v1/ask:
+    Request: { question: str, user_id?: str }
+    Response: { answer: str, sources: [{ record_id: str, snippet: str }], confidence: float }
+    """
+    payload = {
+        "question": "What is the password rotation policy in the cybersecurity guidelines?",
+        "user_id": "auditor_01"
+    }
+    response = client.post("/api/v1/ask", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "answer" in data and isinstance(data["answer"], str)
+    assert "sources" in data and isinstance(data["sources"], list)
+    assert "confidence" in data and isinstance(data["confidence"], (float, int))
+    
+    # Check source object structure
+    if len(data["sources"]) > 0:
+        src = data["sources"][0]
+        assert "record_id" in src
+        assert "snippet" in src
+
+def test_v1_verify_contract_trustworthy():
+    """
+    Verify POST /api/v1/verify:
+    Request: { response_text: str, source_context?: list[str] }
+    Response: { reliability_score: float, hallucination_probability: float, verdict: str, flagged_spans: list }
+    """
+    context = [
+        "Master passwords must contain at least 16 characters and be rotated every 90 days."
+    ]
+    payload = {
+        "response_text": "Master passwords must contain at least 16 characters and be rotated every 90 days.",
+        "source_context": context
+    }
+    response = client.post("/api/v1/verify", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "reliability_score" in data and isinstance(data["reliability_score"], (float, int))
+    assert "hallucination_probability" in data and isinstance(data["hallucination_probability"], (float, int))
+    assert data["verdict"] in ["trustworthy", "partially_reliable", "misleading", "fabricated"]
+    assert data["verdict"] == "trustworthy"
+    assert "flagged_spans" in data and isinstance(data["flagged_spans"], list)
+    assert len(data["flagged_spans"]) == 0
+
+def test_v1_verify_contract_contradiction():
+    """
+    Verify POST /api/v1/verify detects contradiction and returns flagged spans and non-trustworthy verdict.
+    """
+    context = [
+        "SMS-based authentication is strictly prohibited; hardware security keys must be used."
+    ]
+    payload = {
+        "response_text": "SMS-based authentication is completely allowed and recommended for all staff.",
+        "source_context": context
+    }
+    response = client.post("/api/v1/verify", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["verdict"] in ["misleading", "fabricated"]
+    assert data["hallucination_probability"] > 0.30
+    assert len(data["flagged_spans"]) > 0
+    span = data["flagged_spans"][0]
+    assert "text" in span
+    assert "reason" in span
+
+# =====================================================================
+# Dashboard & Utility Endpoint Tests
+# =====================================================================
+
 def test_health_endpoint():
     response = client.get("/api/health")
     assert response.status_code == 200

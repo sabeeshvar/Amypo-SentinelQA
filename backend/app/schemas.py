@@ -2,6 +2,54 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
 
+# --- HackWithAMYPO 2026 Mandatory v1 Contract Schemas ---
+
+class AskSource(BaseModel):
+    record_id: str
+    snippet: str
+
+class AskRequest(BaseModel):
+    question: str
+    user_id: Optional[str] = None
+
+class AskResponse(BaseModel):
+    answer: str
+    sources: List[AskSource]
+    confidence: float
+
+class FlaggedSpan(BaseModel):
+    text: str
+    reason: str
+
+class VerifyRequest(BaseModel):
+    response_text: str
+    source_context: Optional[List[str]] = None
+
+class VerifyVerdict(str, Enum):
+    TRUSTWORTHY = "trustworthy"
+    PARTIALLY_RELIABLE = "partially_reliable"
+    MISLEADING = "misleading"
+    FABRICATED = "fabricated"
+
+class VerifyResponse(BaseModel):
+    reliability_score: float
+    hallucination_probability: float
+    verdict: str  # strictly one of: "trustworthy" | "partially_reliable" | "misleading" | "fabricated"
+    flagged_spans: List[FlaggedSpan]
+
+class V1HealthResponse(BaseModel):
+    status: str
+    offline: bool
+    message: str
+    llm_engine: str
+    embedding_model: str
+    nli_model: str
+    ram_usage_mb: float
+    ram_limit_mb: float
+    documents_indexed: int
+
+# --- Internal & Dashboard Schemas ---
+
 class ClaimStatus(str, Enum):
     ENTAILED = "ENTAILED"         # Supported by evidence (Green)
     NEUTRAL = "NEUTRAL"           # Unverified / Not directly supported (Yellow)

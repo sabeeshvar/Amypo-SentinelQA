@@ -1,0 +1,415 @@
+openapi: 3.0.3
+info:
+  title: VeriQuery / Amypo-SentinelQA API
+  description: |
+    Offline Local Database Question-Answering (PS7) and Real-Time AI Hallucination & Reliability Verification System (PS2).
+    Built strictly for HackWithAMYPO 2026 with Zero Third-Party APIs, Sub-10s Latency, and an 8GB RAM Budget.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000
+    description: Local Offline Server
+
+paths:
+  # =====================================================================
+  # Mandatory HackWithAMYPO 2026 v1 Contracts
+  # =====================================================================
+  /api/v1/ask:
+    post:
+      summary: PS7 Local Database & Document Question Answering
+      description: Answers a question using exclusively offline local context without external APIs.
+      operationId: v1Ask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+            example:
+              question: "What is the password rotation policy in the cybersecurity guidelines?"
+              user_id: "auditor_01"
+      responses:
+        '200':
+          description: Successful RAG answer with source citations and confidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskResponse'
+        '400':
+          description: Bad request (e.g. empty question).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/v1/verify:
+    post:
+      summary: PS2 Real-Time Hallucination & Fact Verification
+      description: |
+        Deconstructs response_text into atomic claims, runs CPU Cross-Encoder NLI verification,
+        and outputs reliability score, hallucination probability, strict verdict, and flagged spans.
+      operationId: v1Verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+            example:
+              response_text: "Master passwords must contain at least 16 characters and be rotated every 90 days."
+              source_context:
+                - "Master passwords must contain at least 16 characters with uppercase, lowercase, numbers, and symbols. Passwords must be rotated every 90 days."
+      responses:
+        '200':
+          description: Verification report and verdict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResponse'
+        '400':
+          description: Bad request (e.g. empty response_text).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/v1/health:
+    get:
+      summary: System Health & Offline Confirmation
+      description: Returns health status, offline verification confirmation, RAM consumption, and model details.
+      operationId: v1Health
+      responses:
+        '200':
+          description: System health status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V1HealthResponse'
+
+  # =====================================================================
+  # Unified Dashboard Endpoints
+  # =====================================================================
+  /api/query:
+    post:
+      summary: Full-Stack RAG & Hallucination Inspection Pipeline
+      description: Retrieves context, synthesizes answer, runs NLI claim check, and returns latency breakdown.
+      operationId: executeQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: Detailed response with claim heatmaps and latency metrics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponse'
+
+  /api/database/query:
+    post:
+      summary: PS7 Local SQLite Natural-Language-to-SQL
+      description: Converts natural language to read-only SQL and executes with destructive command blockers.
+      operationId: queryLocalDatabase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseQueryRequest'
+      responses:
+        '200':
+          description: Query results table and execution time.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseQueryResponse'
+
+  /api/database/schema:
+    get:
+      summary: Local SQLite Schema & Table Explorer
+      description: Returns schema details and table previews for local database introspection.
+      operationId: getDatabaseSchema
+      responses:
+        '200':
+          description: Database schema and table previews.
+
+  /api/ingest/file:
+    post:
+      summary: Ingest Document
+      description: Uploads and indexes a PDF, MD, TXT, or CSV file into local ChromaDB.
+      operationId: uploadAndIngestFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+                - file
+      responses:
+        '200':
+          description: Ingestion confirmation.
+
+  /api/ingest/reindex:
+    post:
+      summary: Reindex Sample Knowledge Base
+      description: Reindexes all files in backend/data/documents into persistent ChromaDB.
+      operationId: reindexSampleDocs
+      responses:
+        '200':
+          description: Reindexing results summary.
+
+  /api/benchmarks:
+    get:
+      summary: HackWithAMYPO 2026 Test Benchmark Suite
+      description: Returns predefined evaluation cases for PS7 and PS2 verification.
+      operationId: getHackathonBenchmarks
+      responses:
+        '200':
+          description: List of benchmark cases.
+
+components:
+  schemas:
+    AskRequest:
+      type: object
+      required:
+        - question
+      properties:
+        question:
+          type: string
+          description: Natural language question to ask against the local database or documents.
+        user_id:
+          type: string
+          nullable: true
+          description: Optional user identifier.
+
+    AskSource:
+      type: object
+      required:
+        - record_id
+        - snippet
+      properties:
+        record_id:
+          type: string
+          description: Identifier of the source chunk or document.
+        snippet:
+          type: string
+          description: Retrieved evidence passage.
+
+    AskResponse:
+      type: object
+      required:
+        - answer
+        - sources
+        - confidence
+      properties:
+        answer:
+          type: string
+          description: Factual generated answer.
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/AskSource'
+        confidence:
+          type: number
+          format: float
+          description: Groundedness confidence score between 0.0 and 1.0.
+
+    FlaggedSpan:
+      type: object
+      required:
+        - text
+        - reason
+      properties:
+        text:
+          type: string
+          description: The propositional claim flagged as contradicted or unverified.
+        reason:
+          type: string
+          description: Detailed explanation of the contradiction or absence of evidence.
+
+    VerifyRequest:
+      type: object
+      required:
+        - response_text
+      properties:
+        response_text:
+          type: string
+          description: Text passage or model response to verify.
+        source_context:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Optional list of reference premise texts. If omitted, retrieved from local vector store.
+
+    VerifyResponse:
+      type: object
+      required:
+        - reliability_score
+        - hallucination_probability
+        - verdict
+        - flagged_spans
+      properties:
+        reliability_score:
+          type: number
+          format: float
+          description: Factuality score between 0.0 and 1.0.
+        hallucination_probability:
+          type: number
+          format: float
+          description: Probability of hallucination/contradiction between 0.0 and 1.0.
+        verdict:
+          type: string
+          enum:
+            - trustworthy
+            - partially_reliable
+            - misleading
+            - fabricated
+          description: Strict categorical judgment.
+        flagged_spans:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlaggedSpan'
+
+    V1HealthResponse:
+      type: object
+      required:
+        - status
+        - offline
+        - message
+        - llm_engine
+        - embedding_model
+        - nli_model
+        - ram_usage_mb
+        - ram_limit_mb
+        - documents_indexed
+      properties:
+        status:
+          type: string
+        offline:
+          type: boolean
+        message:
+          type: string
+        llm_engine:
+          type: string
+        embedding_model:
+          type: string
+        nli_model:
+          type: string
+        ram_usage_mb:
+          type: number
+          format: float
+        ram_limit_mb:
+          type: number
+          format: float
+        documents_indexed:
+          type: integer
+
+    QueryRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        top_k:
+          type: integer
+          default: 4
+        model:
+          type: string
+          nullable: true
+        verify_hallucinations:
+          type: boolean
+          default: true
+        database_mode:
+          type: boolean
+          default: false
+
+    QueryResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            type: object
+        claims:
+          type: array
+          items:
+            type: object
+        reliability:
+          type: object
+        latency:
+          type: object
+        model_used:
+          type: string
+        is_offline_verified:
+          type: boolean
+        database_results:
+          type: object
+          nullable: true
+
+    DatabaseQueryRequest:
+      type: object
+      required:
+        - natural_query
+      properties:
+        natural_query:
+          type: string
+        execute_sql:
+          type: boolean
+          default: true
+
+    DatabaseQueryResponse:
+      type: object
+      properties:
+        natural_query:
+          type: string
+        generated_sql:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        row_count:
+          type: integer
+        explanation:
+          type: string
+        execution_time_ms:
+          type: number
+          format: float
+        error:
+          type: string
+          nullable: true
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string

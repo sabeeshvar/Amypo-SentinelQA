@@ -1,130 +1,200 @@
-# 🛡️ VeriQuery — Offline Local Database QA & AI Hallucination Detector
+# 🛡️ VeriQuery / Amypo-SentinelQA
 
-> **HackWithAMYPO 2026 Submission**  
-> *Unifying **PS7** (Local Database Question-Answering System) & **PS2** (AI Hallucination Detection & Reliability Scoring)*
+> **Official HackWithAMYPO 2026 Hackathon Submission**  
+> *Merged Problem Statements: **PS7** (Local Database Question-Answering System) & **PS2** (AI Hallucination Detection & Reliability Scoring)*
 
-[![Zero Third-Party APIs](https://img.shields.io/badge/APIs-100%25%20Offline-emerald.svg)](https://github.com)
-[![RAM Footprint](https://img.shields.io/badge/RAM%20Budget-%3C%208%20GB-blue.svg)](https://github.com)
-[![Latency Budget](https://img.shields.io/badge/Latency-%3C%2010s-purple.svg)](https://github.com)
+[![Zero Third-Party APIs](https://img.shields.io/badge/APIs-100%25%20Offline-emerald.svg)](https://github.com/sabeeshvar/Amypo-SentinelQA)
+[![RAM Budget](https://img.shields.io/badge/RAM%20Budget-%3C%208%20GB-blue.svg)](https://github.com/sabeeshvar/Amypo-SentinelQA)
+[![Latency Target](https://img.shields.io/badge/Latency-%3C%2010s-purple.svg)](https://github.com/sabeeshvar/Amypo-SentinelQA)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## 🎯 Executive Summary & Problem Statement Alignment
+## 🎯 Executive Summary
 
-| Problem Statement | Hackathon Requirement | VeriQuery Solution |
+**VeriQuery** is an end-to-end, 100% offline, self-hosted AI system engineered for air-gapped environments that combines:
+1. **PS7 (Local Database QA & Offline RAG):** Zero external APIs, fully local document ingestion (`backend/data/documents/`), hybrid dense retrieval using persistent ChromaDB + `all-MiniLM-L6-v2`, and read-only local SQLite tabular reasoning.
+2. **PS2 (Real-Time AI Hallucination & Fact Verification):** Sub-10 second pipeline with atomic proposition deconstruction, CPU cross-encoder Natural Language Inference (`nli-deberta-v3-small`), sentence-level groundedness heatmaps, and strict verdict scoring (`trustworthy` | `partially_reliable` | `misleading` | `fabricated`).
+
+---
+
+## 🏗️ Architecture & Hard Constraints Compliance
+
+| Requirement | Strict Hackathon Criteria | VeriQuery Implementation |
 | :--- | :--- | :--- |
-| **PS7: Local Database QA** | Zero 3rd-party APIs, Offline RAG, Local Tabular / SQLite QA | Persistent **ChromaDB** + **SentenceTransformers (`all-MiniLM-L6-v2`)**, multi-format local document parser (PDF, MD, TXT, CSV), safe read-only SQL executor with guardrails. |
-| **PS2: Hallucination Detection** | &lt; 10s latency, Fact Verification, Reliability Scoring | Real-time sentence/claim deconstruction, CPU **Cross-Encoder NLI (`nli-deberta-v3-small`)**, sentence-level Entailment/Neutral/Contradiction heatmap, and 0–100% Reliability score. |
+| **Third-Party APIs** | **Zero External APIs** (No OpenAI, Anthropic, Cohere, Pinecone, Google) | **100% Self-Hosted & Offline**. Local Ollama (`llama3:8b-q4`), local SentenceTransformers, and local CrossEncoder. |
+| **RAM Budget** | **Strictly &le; 8 GB** | **~5.1 GB total RSS footprint** (36% buffer headroom). |
+| **Latency Budget** | **Strictly &lt; 10 seconds** | **~1.2s to 4.5s** end-to-end pipeline execution time. |
+| **Local Persistence** | Index must persist across restarts | Persistent storage via `chromadb.PersistentClient` in `backend/data/chroma_db/`. |
 
 ---
 
-## 🏗️ System Architecture
+## 🚀 Quick Start Guide
 
-```
-                               +-------------------------------------------------------+
-                               |              VeriQuery Web Dashboard                  |
-                               |  * Interactive Chat & Inline Source Citations         |
-                               |  * Sentence-by-Sentence Groundedness Heatmap          |
-                               |  * Explainability Inspector & NLI Softmax Probabilities|
-                               |  * Sub-10s Latency Waterfall & Performance Telemetry  |
-                               +---------------------------+---------------------------+
-                                                           | REST JSON API
-                                                           v
-+-----------------------------------------------------------------------------------------------------------------+
-|                                           FastAPI Local Offline Engine                                          |
-|                                                                                                                 |
-|   +--------------------------+    +--------------------------+    +------------------------------------------+  |
-|   | Document Ingestion & SQL |    |    Local Vector Store    |    |             Local LLM Engine             |  |
-|   | (PDF, MD, TXT, CSV, SQL) |===>|  ChromaDB + all-MiniLM   |===>| Ollama (llama3:8b / mistral:7b)          |  |
-|   | Sliding Window Chunking  |    | (Cosine Similarity HNSW) |    | Grounded Prompting & Fallback Synthesizer|  |
-|   +--------------------------+    +--------------------------+    +--------------------+---------------------+  |
-|                                                                                        | Response Text           |
-|                                                                                        v                         |
-|                                          +-------------------------------------------------------------------+   |
-|                                          |         PS2 Hallucination & Contradiction Engine                  |   |
-|                                          | 1. Atomic Proposition & Claim Segmentation                        |   |
-|                                          | 2. Candidate Premise Sentence Alignment                           |   |
-|                                          | 3. Cross-Encoder NLI / Fast CPU Heuristic Classification          |   |
-|                                          |    [Entailed (Green) | Neutral (Yellow) | Contradiction (Red)]   |   |
-|                                          | 4. Reliability Score (0-100%) & Faithfulness Index Computation    |   |
-|                                          +-------------------------------------------------------------------+   |
-+-----------------------------------------------------------------------------------------------------------------+
-```
-
----
-
-## 🚀 Key Features
-
-1. **Zero External API Dependencies**: Works completely air-gapped on your local laptop without OpenAI, Anthropic, or Cohere API keys.
-2. **Strict &lt; 8 GB RAM Footprint**:
-   - `all-MiniLM-L6-v2` embeddings: **~80 MB**
-   - `nli-deberta-v3-small` cross-encoder: **~140 MB**
-   - ChromaDB + SQLite: **~120 MB**
-   - Quantized `llama3:8b-q4_K_M` via Ollama: **~4.7 GB**
-   - **Total System Footprint**: **~5.1 GB / 8 GB (36% Headroom)**.
-3. **Sub-10 Second Latency Guarantee**:
-   - Vector Retrieval: `~80 - 150 ms`
-   - Claim Segmentation & NLI Verification: `~120 - 450 ms`
-   - Total pipeline execution: `~1.2s - 4.5s`.
-4. **Sentence-Level Groundedness & NLI Heatmap**:
-   - 🟢 **Entailed (Green)**: Factual proposition conclusively backed by retrieved documentation.
-   - 🟡 **Neutral (Yellow)**: Unverified proposition / extrapolation with missing context.
-   - 🔴 **Contradiction (Red)**: Factual conflict or hallucinated statement contrary to stored knowledge.
-5. **PS7 Local SQL Studio**:
-   - Introspects local databases (`servers`, `incident_tickets`, `security_compliance_audits`).
-   - Converts natural language queries to SQLite syntax with safety guardrails blocking non-read commands.
-
----
-
-## 💻 Quick Start & Installation
-
-### Prerequisites
-- **Python 3.10+** (Tested on Python 3.13)
-- **Node.js 18+** (For UI frontend build)
-- *(Optional)* [Ollama](https://ollama.ai) with `llama3:8b-instruct-q4_K_M` (automatic fallback built-in if Ollama is not running).
-
-### Option 1: One-Click Launch (Windows)
-Double-click `run.bat` or execute:
+### Option 1: One-Command Python Launch (Windows / Linux / macOS)
 ```bash
+# 1. Clone repository
+git clone https://github.com/sabeeshvar/Amypo-SentinelQA.git
+cd Amypo-SentinelQA
+
+# 2. Install dependencies
+pip install -r backend/requirements.txt
+
+# 3. Launch application (Starts FastAPI on port 8000 and auto-opens browser)
 python start.py
 ```
-This boots the FastAPI server on `http://127.0.0.1:8000` and automatically opens your browser.
+*(On Windows, you can simply double-click `run.bat`)*
 
-### Option 2: Manual Developer Setup
-
-#### 1. Backend Setup
+### Option 2: Docker / Docker Compose Launch
 ```bash
-pip install -r backend/requirements.txt
+docker compose up --build
+```
+Access the application dashboard at `http://localhost:8000`.
+
+---
+
+## 📡 API Reference & Curl Command Examples
+
+The system provides mandatory HackWithAMYPO v1 contracts alongside dashboard endpoints.
+
+### 1. Ask Endpoint (`POST /api/v1/ask`)
+Answers a natural language question against local documents/database and returns source citations and confidence.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ask \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is the password rotation policy in the cybersecurity guidelines?",
+    "user_id": "auditor_01"
+  }'
+```
+
+**Response Example (`200 OK`):**
+```json
+{
+  "answer": "Based on the verified offline documentation: Passwords must be rotated every 90 days. Master passwords must contain at least 16 characters with uppercase, lowercase, numbers, and symbols.",
+  "sources": [
+    {
+      "record_id": "enterprise_security_policy.md_0",
+      "snippet": "1.2. Password Rotation: Master passwords must contain at least 16 characters with uppercase, lowercase, numbers, and symbols. Passwords must be rotated every 90 days."
+    }
+  ],
+  "confidence": 0.95
+}
+```
+
+---
+
+### 2. Verify Endpoint (`POST /api/v1/verify`)
+Evaluates an answer for hallucinations against provided context (or persistent vector storage), returning a strict verdict, reliability score, and flagged spans.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "response_text": "SMS authentication is allowed and recommended for all staff.",
+    "source_context": [
+      "SMS-based authentication is strictly prohibited; hardware security keys (FIDO2) or TOTP authenticator apps must be used."
+    ]
+  }'
+```
+
+**Response Example (`200 OK`):**
+```json
+{
+  "reliability_score": 0.0,
+  "hallucination_probability": 1.0,
+  "verdict": "fabricated",
+  "flagged_spans": [
+    {
+      "text": "SMS authentication is allowed and recommended for all staff.",
+      "reason": "Factual contradiction: Contradicts factual statement in 'ProvidedContext_1': 'SMS-based authentication is strictly prohibited...'"
+    }
+  ]
+}
+```
+
+---
+
+### 3. Health & Offline Confirmation Endpoint (`GET /api/v1/health`)
+Verifies system health, memory consumption, and confirms offline status.
+
+```bash
+curl -X GET http://localhost:8000/api/v1/health
+```
+
+**Response Example (`200 OK`):**
+```json
+{
+  "status": "healthy",
+  "offline": true,
+  "message": "100% offline self-hosted AI system (PS7 + PS2) - Zero external API keys",
+  "llm_engine": "llama3:8b-instruct-q4_K_M (Ollama)",
+  "embedding_model": "all-MiniLM-L6-v2",
+  "nli_model": "cross-encoder/nli-deberta-v3-small",
+  "ram_usage_mb": 450.2,
+  "ram_limit_mb": 8192.0,
+  "documents_indexed": 12
+}
+```
+
+---
+
+## 🧪 Automated Testing & Verification
+
+Run the comprehensive pytest test suite verifying all schemas, vector operations, SQLite safety, and NLI classification:
+
+```bash
 python -m pytest backend/tests/ -v
-python -m uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
-#### 2. Frontend Setup
-```bash
-cd frontend
-npm install
-npm run build   # Or 'npm run dev' for live development on port 5173
+**Test Coverage:**
+- ✅ `test_v1_health`: Validates offline status, zero third-party dependency, and RAM limits.
+- ✅ `test_v1_ask_contract`: Enforces mandatory `{ question, user_id }` and `{ answer, sources, confidence }` types.
+- ✅ `test_v1_verify_contract_trustworthy`: Confirms entailment verification and empty flagged spans.
+- ✅ `test_v1_verify_contract_contradiction`: Confirms contradiction detection, strict verdict, and flagged span extraction.
+- ✅ `test_database_initialization_and_schema`: Verifies SQLite schema introspection.
+- ✅ `test_destructive_query_blocked_guardrail`: Tests security guardrail blocking DROP/DELETE/UPDATE.
+- ✅ `test_vector_store_add_and_search`: Tests ChromaDB persistent chunking and cosine similarity.
+
+---
+
+## 📂 Project Structure
+
+```
+Amypo-SentinelQA/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── routes.py           # /api/v1/ask, /api/v1/verify, /api/v1/health, etc.
+│   │   ├── services/
+│   │   │   ├── vector_store.py     # Persistent ChromaDB + all-MiniLM-L6-v2
+│   │   │   ├── hallucination_engine.py # CPU Cross-Encoder NLI & Claim Segmenter
+│   │   │   ├── llm_engine.py       # Ollama LLaMA-3 connector & offline synthesis
+│   │   │   ├── database_engine.py  # Local SQLite Tabular QA & Guardrail Engine
+│   │   │   ├── ingestion.py        # PDF, Markdown, CSV, TXT chunker
+│   │   │   └── metrics.py          # RAM footprint & high-resolution latency timer
+│   │   ├── config.py               # Memory budget & model settings
+│   │   ├── main.py                 # FastAPI application with CORS & static serving
+│   │   └── schemas.py              # Pydantic v1 contract models
+│   ├── data/
+│   │   ├── documents/              # Local knowledge base documents
+│   │   └── sample_db/              # Local business database (enterprise_ops.sqlite)
+│   ├── requirements.txt            # Pinned backend dependencies
+│   └── tests/                      # Automated test suite
+├── frontend/
+│   ├── src/                        # React 18 + Tailwind dashboard components
+│   └── dist/                       # Production web distribution bundle
+├── Dockerfile                      # Containerized offline environment
+├── docker-compose.yml              # One-command orchestration
+├── openapi.yaml                    # Full OpenAPI 3.0.3 specification
+├── MODEL_CARD.md                   # Model architecture, quantization, and memory audit
+├── README.md                       # Documentation & setup guide
+├── run.bat                         # Windows one-click launcher
+└── start.py                        # Cross-platform runner
 ```
 
 ---
 
-## 🧪 Benchmark Test Cases
-
-| Benchmark ID | Problem Statement | Query / Prompt | Expected Outcome |
-| :--- | :--- | :--- | :--- |
-| `BENCH-PS7-01` | **PS7 (Local SQL)** | *"Which servers are currently degraded or in maintenance?"* | Translates to `SELECT server_id, hostname, status FROM servers WHERE status != 'ONLINE'`. Returns `SRV-104` and `SRV-106`. |
-| `BENCH-PS7-02` | **PS7 (Offline RAG)** | *"What is the response SLA and resolution target for a P1 Critical security incident?"* | Retrieves `POL-SEC-2026`. Outputs 15 min response SLA, 4 hours resolution target. |
-| `BENCH-PS2-01` | **PS2 (Factual Grounding)**| *"Is SMS authentication allowed according to company cybersecurity policy?"* | Proves SMS authentication is strictly prohibited; verifies 100% Entailment with Low Risk. |
-| `BENCH-PS2-02` | **PS2 (Hallucination Warning)**| *"Verify claim: 'The RTO failover guarantee is 60 minutes and snapshots run once a week.'"* | Flags direct **CONTRADICTION** (actual RTO is 15 minutes, snapshots every 6 hours). |
-
----
-
-## 🛡️ Hackathon Evaluation Checklist
-- [x] **PS7**: Offline RAG & local multi-format document ingestion (PDF, MD, TXT, CSV).
-- [x] **PS7**: Local tabular / SQLite database query engine with read-only security guardrails.
-- [x] **PS2**: AI Hallucination detection engine running on CPU with atomic claim deconstruction.
-- [x] **PS2**: Cross-Encoder NLI classification with explainability and sentence heatmaps.
-- [x] **Zero Third-Party APIs**: 100% air-gapped / local inference.
-- [x] **RAM & Latency Limits**: &lt;8 GB memory footprint, &lt;10s execution budget.
-- [x] **Automated Test Suite**: 16/16 unit and integration test pass rate.
+## ⚖️ License & Hackathon Notice
+Licensed under the [MIT License](LICENSE). Built for the **HackWithAMYPO 2026** Hackathon.

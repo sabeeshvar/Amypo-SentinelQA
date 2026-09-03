@@ -1,13 +1,16 @@
 import os
 import shutil
 import tempfile
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from app.config import settings
 from app.schemas import (
+    AskRequest, AskResponse, AskSource,
+    VerifyRequest, VerifyResponse, FlaggedSpan, VerifyVerdict,
+    V1HealthResponse,
     QueryRequest, QueryResponse, VerificationOnlyRequest, VerificationOnlyResponse,
     IngestFileResponse, DatabaseQueryRequest, DatabaseQueryResponse,
-    SystemHealthResponse, BenchmarkCase, LatencyBreakdown, SourceChunk, ClaimVerification, ReliabilityReport
+    SystemHealthResponse, BenchmarkCase, LatencyBreakdown, SourceChunk, ClaimVerification, ReliabilityReport, ClaimStatus
 )
 from app.services.vector_store import vector_store_service
 from app.services.llm_engine import llm_engine
@@ -17,6 +20,150 @@ from app.services.ingestion import ingestion_service
 from app.services.metrics import PerformanceTimer, get_system_memory_mb, is_within_memory_budget
 
 router = APIRouter()
+v1_router = APIRouter(prefix="/v1")
+
+# =====================================================================
+# HackWithAMYPO 2026 Mandatory v1 API Contracts (PS7 + PS2)
+# =====================================================================
+
+@v1_router.post("/ask", response_model=AskResponse)
+def v1_ask(req: AskRequest):
+    """
+    Mandatory HackWithAMYPO PS7 Contract:
+    Request: { question: str, user_id?: str }
+    Response: { answer: str, sources: [{ record_id: str, snippet: str }], confidence: float }
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(status_code=400, detail="Field 'question' cannot be empty.")
+
+    # 1. Retrieve local context chunks
+    source_chunks = vector_store_service.similarity_search(req.question, top_k=settings.TOP_K_CHUNKS)
+
+    # 2. Local LLM answer generation (100% offline)
+    answer = llm_engine.generate_rag_answer(req.question, source_chunks)
+
+    # 3. Format sources into record_id & snippet
+    formatted_sources: List[AskSource] = []
+    for chunk in source_chunks:
+        formatted_sources.append(
+            AskSource(
+                record_id=str(chunk.chunk_id),
+                snippet=chunk.content[:350]
+            )
+        )
+
+    # 4. Compute confidence (groundedness / faithfulness score)
+    confidence = 0.50
+    if source_chunks:
+        claims, report = hallucination_engine.verify_answer(answer, source_chunks)
+        confidence = round(max(0.0, min(1.0, report.overall_score / 100.0)), 2)
+    else:
+        confidence = 0.0
+
+    return AskResponse(
+        answer=answer,
+        sources=formatted_sources,
+        confidence=confidence
+    )
+
+@v1_router.post("/verify", response_model=VerifyResponse)
+def v1_verify(req: VerifyRequest):
+    """
+    Mandatory HackWithAMYPO PS2 Contract:
+    Request: { response_text: str, source_context?: list[str] }
+    Response: {
+        reliability_score: float,
+        hallucination_probability: float,
+        verdict: "trustworthy" | "partially_reliable" | "misleading" | "fabricated",
+        flagged_spans: [{ text: str, reason: str }]
+    }
+    """
+    if not req.response_text or not req.response_text.strip():
+        raise HTTPException(status_code=400, detail="Field 'response_text' cannot be empty.")
+
+    # 1. Resolve source chunks from source_context or vector store
+    sources: List[SourceChunk] = []
+    if req.source_context and len(req.source_context) > 0:
+        for i, ctx in enumerate(req.source_context):
+            sources.append(
+                SourceChunk(
+                    chunk_id=f"ctx_{i+1}",
+                    doc_name=f"ProvidedContext_{i+1}",
+                    content=ctx,
+                    similarity_score=1.0,
+                    metadata={"source": f"ProvidedContext_{i+1}"}
+                )
+            )
+    else:
+        # Fallback to similarity search in persistent ChromaDB
+        sources = vector_store_service.similarity_search(req.response_text, top_k=settings.TOP_K_CHUNKS)
+
+    # 2. Run atomic claim deconstruction & NLI verification
+    claims, report = hallucination_engine.verify_answer(req.response_text, sources)
+
+    # 3. Extract flagged spans (any claims with contradiction or missing proof)
+    flagged_spans: List[FlaggedSpan] = []
+    for c in claims:
+        if c.status == ClaimStatus.CONTRADICTION:
+            flagged_spans.append(FlaggedSpan(text=c.claim_text, reason=f"Factual contradiction: {c.reasoning}"))
+        elif c.status == ClaimStatus.NEUTRAL:
+            flagged_spans.append(FlaggedSpan(text=c.claim_text, reason=f"Unsubstantiated claim: {c.reasoning}"))
+
+    # 4. Calculate reliability_score & hallucination_probability
+    total_claims = max(1, len(claims))
+    contra_count = report.contradicted_claims_count
+    neutral_count = report.neutral_claims_count
+    entailed_count = report.entailed_claims_count
+
+    # Normalized reliability score between 0.0 and 1.0
+    reliability_score = round(max(0.0, min(1.0, report.overall_score / 100.0)), 2)
+
+    # Hallucination probability: fraction of contradicted & neutral claims
+    raw_hallu_prob = (contra_count * 1.0 + neutral_count * 0.35) / total_claims
+    hallucination_probability = round(max(0.0, min(1.0, raw_hallu_prob)), 2)
+
+    # 5. Strict Verdict assignment ("trustworthy" | "partially_reliable" | "misleading" | "fabricated")
+    if contra_count >= 2 or hallucination_probability >= 0.70:
+        verdict = VerifyVerdict.FABRICATED.value
+    elif contra_count >= 1 or hallucination_probability >= 0.35:
+        verdict = VerifyVerdict.MISLEADING.value
+    elif neutral_count > 0 or hallucination_probability > 0.10:
+        verdict = VerifyVerdict.PARTIALLY_RELIABLE.value
+    else:
+        verdict = VerifyVerdict.TRUSTWORTHY.value
+
+    return VerifyResponse(
+        reliability_score=reliability_score,
+        hallucination_probability=hallucination_probability,
+        verdict=verdict,
+        flagged_spans=flagged_spans
+    )
+
+@v1_router.get("/health", response_model=V1HealthResponse)
+def v1_health():
+    """
+    Mandatory HackWithAMYPO Health Endpoint:
+    Returns system status, offline confirmation, and local model details.
+    """
+    ollama_ok = llm_engine.is_ollama_available()
+    ram_mb = round(get_system_memory_mb(), 2)
+
+    return V1HealthResponse(
+        status="healthy" if is_within_memory_budget() else "degraded_high_memory",
+        offline=True,
+        message="100% offline self-hosted AI system (PS7 + PS2) - Zero external API keys",
+        llm_engine=settings.OLLAMA_MODEL if ollama_ok else "Offline Grounded Synthesizer",
+        embedding_model=settings.EMBEDDING_MODEL_NAME,
+        nli_model=settings.NLI_MODEL_NAME if hallucination_engine.nli_model.cross_encoder else "Fast Semantic NLI (CPU)",
+        ram_usage_mb=ram_mb,
+        ram_limit_mb=settings.RAM_LIMIT_GB * 1024,
+        documents_indexed=vector_store_service.get_document_count()
+    )
+
+
+# =====================================================================
+# Dashboard & Developer Endpoints
+# =====================================================================
 
 @router.get("/health", response_model=SystemHealthResponse)
 def get_system_health():
@@ -217,7 +364,7 @@ async def upload_and_ingest_file(file: UploadFile = File(...)):
 
 @router.post("/ingest/reindex")
 def reindex_sample_docs():
-    """Reindexes all sample documents from data/sample_docs."""
+    """Reindexes all sample documents from backend/data/documents."""
     vector_store_service.reset_collection()
     results = ingestion_service.ingest_directory()
     return {
