@@ -1,0 +1,66 @@
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from app.config import settings
+from app.api.routes import router as api_router
+from app.services.ingestion import ingestion_service
+from app.services.vector_store import vector_store_service
+from app.services.database_engine import database_engine
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Ensure sample documents are indexed and database is initialized
+    print(f"[{settings.PROJECT_NAME}] Initializing offline knowledge base...")
+    try:
+        # Check if vector store is empty; if so, index sample docs
+        if vector_store_service.get_document_count() == 0:
+            print(f"[{settings.PROJECT_NAME}] Ingesting sample docs from {settings.SAMPLE_DOCS_PATH}...")
+            ingestion_service.ingest_directory(settings.SAMPLE_DOCS_PATH)
+            print(f"[{settings.PROJECT_NAME}] Total chunks indexed: {vector_store_service.get_document_count()}")
+    except Exception as e:
+        print(f"[{settings.PROJECT_NAME}] Startup ingestion notice: {e}")
+    yield
+    # Shutdown
+    print(f"[{settings.PROJECT_NAME}] Shutting down...")
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description=settings.DESCRIPTION,
+    lifespan=lifespan
+)
+
+# CORS Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount API routes
+app.include_router(api_router, prefix="/api")
+
+# Serve frontend build if exists
+frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
+if os.path.exists(frontend_dist):
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
+else:
+    @app.get("/")
+    def root():
+        return {
+            "system": "VeriQuery Offline AI Engine",
+            "version": settings.VERSION,
+            "status": "ONLINE",
+            "hackathon": "HackWithAMYPO 2026 (PS7 & PS2)",
+            "docs": "/docs",
+            "api": "/api/health"
+        }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
