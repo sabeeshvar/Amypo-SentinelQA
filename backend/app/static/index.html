@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeriQuery SentinelQA | Unified AI Dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    
+    /* Glassmorphic card styling */
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.5);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* Flagged text span highlight with tooltip styling */
+    .flagged-highlight {
+      background-color: rgba(239, 68, 68, 0.25);
+      border-bottom: 2px solid #ef4444;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-weight: 500;
+      color: #fca5a5;
+      cursor: help;
+      position: relative;
+      display: inline-block;
+    }
+    .flagged-highlight:hover::after {
+      content: attr(data-reason);
+      position: absolute;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0f172a;
+      color: #fecaca;
+      border: 1px solid #dc2626;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      white-space: nowrap;
+      z-index: 50;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      pointer-events: none;
+      max-width: 320px;
+      white-space: normal;
+      width: max-content;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(71, 85, 105, 0.6);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(99, 102, 241, 0.6);
+    }
+  </style>
+</head>
+<body class="min-h-full flex flex-col bg-slate-950 text-slate-100 antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- =====================================================================
+       HEADER: NAVIGATION & LIVE STATUS PILL (GET /api/v1/health)
+       ===================================================================== -->
+  <header class="sticky top-0 z-50 glass-panel border-b border-slate-800/80 px-4 sm:px-8 py-3.5 transition-all">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Brand & Project Title -->
+      <div class="flex items-center space-x-3.5">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/25 ring-1 ring-white/20">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-bold text-lg tracking-tight text-white flex items-center gap-2">
+              VeriQuery <span class="text-xs uppercase tracking-widest px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">SentinelQA</span>
+            </h1>
+          </div>
+          <p class="text-xs text-slate-400">Offline Grounded QA & NLI Hallucination Verification Engine</p>
+        </div>
+      </div>
+
+      <!-- Live Health Status Pill (GET /api/v1/health) & Navigation -->
+      <div class="flex items-center space-x-3">
+        
+        <!-- Interactive Health Pill -->
+        <div id="health-pill" 
+             title="Click to refresh system health status"
+             onclick="checkHealth()"
+             class="cursor-pointer flex items-center space-x-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 hover:border-slate-600 text-xs shadow-inner transition active:scale-95">
+          <span class="relative flex h-2.5 w-2.5">
+            <span id="health-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span id="health-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+          </span>
+          <span id="health-text" class="text-slate-300 font-medium">Connecting...</span>
+          <span id="health-meta" class="hidden sm:inline text-slate-500 border-l border-slate-700 pl-2">-- MB</span>
+        </div>
+
+        <!-- Quick Jump Links -->
+        <div class="flex items-center space-x-1.5">
+          <a href="#chat-section" class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800 transition">
+            Chat QA
+          </a>
+          <a href="#verify-section" class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800 transition">
+            Verifier Sandbox
+          </a>
+          <a href="/docs" target="_blank" class="text-xs px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition flex items-center gap-1">
+            <span>Swagger</span>
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       MAIN CONTENT CONTAINER
+       ===================================================================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-10">
+
+    <!-- =====================================================================
+         SECTION 1: CHAT UI FOR QUESTION ANSWERING (POST /api/v1/ask)
+         ===================================================================== -->
+    <section id="chat-section" class="glass-panel rounded-2xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
+      <!-- Glow ambient background -->
+      <div class="absolute -top-32 -right-32 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- Section Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-slate-800/80 gap-3">
+        <div class="flex items-center space-x-3">
+          <div class="p-2.5 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-inner">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              Interactive Grounded Chat
+              <span class="text-[11px] font-mono font-normal px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-800/50">POST /api/v1/ask</span>
+            </h2>
+            <p class="text-xs text-slate-400">Ask domain questions grounded strictly in offline indexed documents with reliability scoring</p>
+          </div>
+        </div>
+
+        <!-- Chat Actions -->
+        <div class="flex items-center space-x-2">
+          <button onclick="clearChatHistory()" class="text-xs px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            Clear Conversation
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Starter Prompts -->
+      <div class="mb-4">
+        <div class="flex items-center gap-2 text-xs text-slate-400 mb-2 font-medium">
+          <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <span>Suggested Queries:</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="fillQuestion('What are the primary clinical trial guidelines for participant safety?')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-200 border border-slate-800 hover:border-indigo-700/50 transition shadow-sm">
+            🛡️ Clinical Trial Safety
+          </button>
+          <button onclick="fillQuestion('What is the enterprise password and access control policy?')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-200 border border-slate-800 hover:border-indigo-700/50 transition shadow-sm">
+            🔑 Access Control Policy
+          </button>
+          <button onclick="fillQuestion('What are the data retention and compliance requirements?')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-200 border border-slate-800 hover:border-indigo-700/50 transition shadow-sm">
+            📁 Data Retention
+          </button>
+          <button onclick="fillQuestion('Explain the informed consent protocol for candidate screening.')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-200 border border-slate-800 hover:border-indigo-700/50 transition shadow-sm">
+            📋 Informed Consent
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Chat Stream Container -->
+      <div id="chat-stream" class="space-y-4 max-h-[560px] overflow-y-auto pr-1 pb-2">
+        <!-- Initial Welcome Message -->
+        <div class="flex items-start space-x-3 text-sm">
+          <div class="h-8 w-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex-shrink-0 flex items-center justify-center text-indigo-300 text-xs font-bold">
+            AI
+          </div>
+          <div class="flex-1 glass-card p-4 rounded-2xl rounded-tl-sm text-slate-200 space-y-2 border border-slate-800">
+            <p class="font-medium text-white text-sm">Welcome to VeriQuery SentinelQA!</p>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              This system operates in <span class="text-emerald-400 font-semibold">100% offline edge mode</span> without external API keys. Every answer is synthesized strictly from local vector search records and paired with source citation cards (<code class="text-indigo-300">record_id</code> + <code class="text-indigo-300">snippet</code>) and reliability confidence scoring.
+            </p>
+            <div class="text-[11px] text-slate-400 pt-1">
+              Type your question below or click any of the suggested queries to begin.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input Form -->
+      <form id="ask-form" onsubmit="handleAskSubmit(event)" class="mt-4 pt-3 border-t border-slate-800/80">
+        <div class="flex flex-col sm:flex-row gap-2.5 items-end">
+          <div class="relative flex-1 w-full">
+            <textarea
+              id="question-input"
+              rows="2"
+              required
+              placeholder="Ask a question about clinical guidelines, security policy, or indexed documentation... (Shift+Enter for newline, Enter to send)"
+              onkeydown="handleKeySubmit(event)"
+              class="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition shadow-inner resize-y min-h-[56px] max-h-32"
+            ></textarea>
+          </div>
+          <div class="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+            <span class="text-[11px] text-slate-500 hidden md:inline">100% Offline Edge Mode</span>
+            <button
+              type="submit"
+              id="ask-submit-btn"
+              class="inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-sm transition shadow-lg shadow-indigo-600/30 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto flex-shrink-0"
+            >
+              <span id="ask-spinner" class="hidden">
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+              </span>
+              <span id="ask-btn-label">Ask Sentinel</span>
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- =====================================================================
+         SECTION 2: DIRECT TEXT VERIFICATION SANDBOX (POST /api/v1/verify)
+         ===================================================================== -->
+    <section id="verify-section" class="glass-panel rounded-2xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
+      <!-- Glow ambient background -->
+      <div class="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- Section Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-slate-800/80 gap-3">
+        <div class="flex items-center space-x-3">
+          <div class="p-2.5 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 shadow-inner">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              Hallucination Verification Sandbox
+              <span class="text-[11px] font-mono font-normal px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/50">POST /api/v1/verify</span>
+            </h2>
+            <p class="text-xs text-slate-400">Direct NLI cross-encoder fact audit with fine-grained flagged span highlights & verdicts</p>
+          </div>
+        </div>
+
+        <!-- Preset Loaders -->
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          <span class="text-slate-400 font-medium">Test Presets:</span>
+          <button onclick="loadVerifyPreset('trustworthy')" class="px-2.5 py-1 rounded-md bg-slate-900/90 hover:bg-emerald-950/50 text-slate-300 hover:text-emerald-300 border border-slate-700/70 transition">
+            ✓ Trustworthy
+          </button>
+          <button onclick="loadVerifyPreset('fabricated')" class="px-2.5 py-1 rounded-md bg-slate-900/90 hover:bg-rose-950/50 text-slate-300 hover:text-rose-300 border border-slate-700/70 transition">
+            ⚠️ Fabricated
+          </button>
+          <button onclick="loadVerifyPreset('unsubstantiated')" class="px-2.5 py-1 rounded-md bg-slate-900/90 hover:bg-amber-950/50 text-slate-300 hover:text-amber-300 border border-slate-700/70 transition">
+            ⚡ Unsubstantiated
+          </button>
+        </div>
+      </div>
+
+      <!-- Verification Input Form -->
+      <form id="verify-form" onsubmit="handleVerifySubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+            Candidate Response to Verify <span class="text-rose-400">*</span>
+          </label>
+          <textarea
+            id="verify-response-input"
+            rows="3"
+            required
+            placeholder="Paste any candidate AI response text to audit for factual veracity and hallucinations..."
+            class="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition shadow-inner resize-y font-sans"
+          ></textarea>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              Reference Evidence Context
+            </label>
+            <span class="text-[11px] text-slate-500">Optional: Leave blank to audit against indexed ChromaDB corpus</span>
+          </div>
+          <textarea
+            id="verify-context-input"
+            rows="3"
+            placeholder="Optional reference paragraphs (one per paragraph, or comma/newline separated)..."
+            class="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition shadow-inner resize-y font-sans"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <span class="text-xs text-slate-500">NLI Cross-Encoder • Claim-Level Deconstruction</span>
+          <button
+            type="submit"
+            id="verify-submit-btn"
+            class="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-medium text-sm transition shadow-lg shadow-emerald-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span id="verify-spinner" class="hidden">
+              <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+            <span id="verify-btn-label">Run Fact Audit</span>
+            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Verification Output / Results Box (Hidden until audited) -->
+      <div id="verify-results" class="hidden mt-6 pt-6 border-t border-slate-800/80 space-y-6">
+        
+        <!-- Score & Verdict Metric Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <!-- Verdict Card -->
+          <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Verdict</span>
+            <div class="mt-2">
+              <div id="verdict-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
+                <!-- Set via JS -->
+              </div>
+            </div>
+            <p id="verdict-desc" class="text-[11px] text-slate-500 mt-2">Analysis status</p>
+          </div>
+
+          <!-- Reliability Score Card -->
+          <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Reliability Score</span>
+              <span id="reliability-pct" class="text-xs font-semibold text-emerald-400">0%</span>
+            </div>
+            <div class="mt-2">
+              <span id="reliability-value" class="text-2xl font-black text-white">0.00</span>
+              <span class="text-xs text-slate-500">/ 1.00</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden">
+              <div id="reliability-bar" class="h-full rounded-full transition-all duration-500 bg-emerald-500" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Hallucination Probability Card -->
+          <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Hallucination Risk</span>
+              <span id="hallucination-pct" class="text-xs font-semibold text-rose-400">0%</span>
+            </div>
+            <div class="mt-2">
+              <span id="hallucination-value" class="text-2xl font-black text-white">0.00</span>
+              <span class="text-xs text-slate-500">probability</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden">
+              <div id="hallucination-bar" class="h-full rounded-full transition-all duration-500 bg-rose-500" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flagged Span Highlight View -->
+        <div class="p-5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              Annotated Text with Highlighted Flagged Spans
+            </span>
+            <span class="text-[11px] text-slate-500">Hover over highlighted spans for discrepancy explanations</span>
+          </div>
+          <div id="annotated-text-box" class="p-4 rounded-lg bg-slate-950/80 border border-slate-800/80 text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+        <!-- Detailed Flagged Spans Breakdown List -->
+        <div class="space-y-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            Detected Discrepancies & Flagged Spans (<span id="flagged-count">0</span>)
+          </h3>
+          <div id="flagged-spans-container" class="space-y-2.5">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =====================================================================
+       FOOTER
+       ===================================================================== -->
+  <footer class="border-t border-slate-900 glass-panel mt-auto py-4 px-4 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center space-x-2">
+        <span class="h-2 w-2 rounded-full bg-emerald-500 inline-block"></span>
+        <span class="font-medium text-slate-400">VeriQuery SentinelQA</span>
+        <span>•</span>
+        <span>100% Offline Edge RAG & Hallucination Auditor</span>
+      </div>
+      <div>
+        <span class="text-slate-400">HackWithAMYPO 2026 (PS7 & PS2 Contracts)</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- =====================================================================
+       JAVASCRIPT LOGIC
+       ===================================================================== -->
+  <script>
+    // --- 1. HEALTH STATUS MONITOR (GET /api/v1/health) ---
+    async function checkHealth() {
+      const pill = document.getElementById('health-pill');
+      const dot = document.getElementById('health-dot');
+      const ping = document.getElementById('health-ping');
+      const text = document.getElementById('health-text');
+      const meta = document.getElementById('health-meta');
+
+      try {
+        const res = await fetch('/api/v1/health');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500';
+        ping.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75';
+        text.innerText = data.offline ? 'Offline System Active' : 'Online System Active';
+        text.className = 'text-emerald-400 font-semibold';
+        
+        const ramMb = data.ram_usage_mb ? Math.round(data.ram_usage_mb) : '--';
+        const docCount = data.documents_indexed !== undefined ? data.documents_indexed : 0;
+        meta.innerText = `${ramMb}MB RAM • ${docCount} Docs`;
+      } catch (err) {
+        dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500';
+        ping.className = 'hidden';
+        text.innerText = 'Engine Offline / Reconnecting';
+        text.className = 'text-rose-400 font-semibold';
+        meta.innerText = 'Check Backend';
+      }
+    }
+
+    // Initial check & recurring poll every 10 seconds
+    checkHealth();
+    setInterval(checkHealth, 10000);
+
+    // --- 2. CHAT UI LOGIC (POST /api/v1/ask) ---
+    function fillQuestion(q) {
+      const input = document.getElementById('question-input');
+      input.value = q;
+      input.focus();
+    }
+
+    function handleKeySubmit(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('ask-form').requestSubmit();
+      }
+    }
+
+    function clearChatHistory() {
+      const stream = document.getElementById('chat-stream');
+      stream.innerHTML = `
+        <div class="flex items-start space-x-3 text-sm">
+          <div class="h-8 w-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex-shrink-0 flex items-center justify-center text-indigo-300 text-xs font-bold">AI</div>
+          <div class="flex-1 glass-card p-4 rounded-2xl rounded-tl-sm text-slate-200 space-y-2 border border-slate-800">
+            <p class="font-medium text-white text-sm">Conversation reset.</p>
+            <p class="text-xs text-slate-400">Ask a question to begin a new grounded retrieval inquiry.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    async function handleAskSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('question-input');
+      const question = input.value.trim();
+      if (!question) return;
+
+      const submitBtn = document.getElementById('ask-submit-btn');
+      const spinner = document.getElementById('ask-spinner');
+      const btnLabel = document.getElementById('ask-btn-label');
+      const chatStream = document.getElementById('chat-stream');
+
+      // 1. Render User Message Bubble
+      const userBubble = document.createElement('div');
+      userBubble.className = 'flex items-start justify-end space-x-3 text-sm';
+      userBubble.innerHTML = `
+        <div class="max-w-[85%] bg-indigo-600 text-white p-3.5 rounded-2xl rounded-tr-sm shadow-md shadow-indigo-600/20">
+          <p class="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">${escapeHtml(question)}</p>
+          <span class="block text-[10px] text-indigo-200 mt-1 text-right">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div class="h-8 w-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex-shrink-0 flex items-center justify-center text-indigo-300 text-xs font-bold">
+          You
+        </div>
+      `;
+      chatStream.appendChild(userBubble);
+      input.value = '';
+
+      // 2. Render Temporary "Thinking" Bubble
+      const thinkingBubble = document.createElement('div');
+      thinkingBubble.id = 'thinking-bubble';
+      thinkingBubble.className = 'flex items-start space-x-3 text-sm';
+      thinkingBubble.innerHTML = `
+        <div class="h-8 w-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex-shrink-0 flex items-center justify-center text-indigo-300 text-xs font-bold animate-pulse">
+          AI
+        </div>
+        <div class="glass-card p-4 rounded-2xl rounded-tl-sm text-slate-300 border border-slate-800 flex items-center space-x-2">
+          <svg class="animate-spin h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span class="text-xs text-slate-400">Searching local vectors & synthesizing grounded answer...</span>
+        </div>
+      `;
+      chatStream.appendChild(thinkingBubble);
+      chatStream.scrollTop = chatStream.scrollHeight;
+
+      // Lock UI
+      submitBtn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnLabel.innerText = 'Searching...';
+
+      try {
+        const res = await fetch('/api/v1/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `Server returned error ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        // Remove thinking bubble
+        const existingThinking = document.getElementById('thinking-bubble');
+        if (existingThinking) existingThinking.remove();
+
+        // Compute Confidence / Reliability Badge styling
+        const confPercent = Math.round((data.confidence || 0) * 100);
+        let badgeStyle = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+        let badgeLabel = 'High Groundedness';
+        if (confPercent < 50) {
+          badgeStyle = 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+          badgeLabel = 'Low Groundedness';
+        } else if (confPercent < 80) {
+          badgeStyle = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+          badgeLabel = 'Moderate Groundedness';
+        }
+
+        // Prepare Sources Cards
+        let sourcesHtml = '';
+        if (data.sources && data.sources.length > 0) {
+          sourcesHtml = `
+            <div class="mt-3 pt-3 border-t border-slate-800/80">
+              <div class="flex items-center space-x-1.5 text-xs text-slate-400 mb-2 font-medium">
+                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <span>Source Citation Cards (${data.sources.length}):</span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                ${data.sources.map((src, i) => `
+                  <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 transition flex flex-col justify-between">
+                    <div>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="font-mono text-[11px] text-indigo-300 font-semibold truncate max-w-[200px]" title="${escapeHtml(src.record_id)}">
+                          📄 ${escapeHtml(src.record_id)}
+                        </span>
+                        <span class="text-[9px] uppercase font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">Citation #${i+1}</span>
+                      </div>
+                      <p class="text-xs text-slate-300 line-clamp-4 leading-relaxed font-sans">${escapeHtml(src.snippet)}</p>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        } else {
+          sourcesHtml = `
+            <div class="mt-2 text-[11px] text-slate-500 italic">No source citations returned for this query.</div>
+          `;
+        }
+
+        // Escape answer for safe JS string passing
+        const answerRaw = data.answer || 'No answer returned.';
+        const answerEscaped = escapeHtml(answerRaw);
+
+        // 3. Render Assistant Response Bubble
+        const aiBubble = document.createElement('div');
+        aiBubble.className = 'flex items-start space-x-3 text-sm';
+        aiBubble.innerHTML = `
+          <div class="h-8 w-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex-shrink-0 flex items-center justify-center text-indigo-300 text-xs font-bold">
+            AI
+          </div>
+          <div class="flex-1 glass-card p-4 sm:p-5 rounded-2xl rounded-tl-sm text-slate-200 border border-slate-800 space-y-3">
+            
+            <!-- Answer Header: Confidence Badge & Actions -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Grounded Synthesis</span>
+              
+              <div class="flex items-center space-x-2">
+                <!-- Reliability Badge -->
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeStyle}">
+                  <span class="h-1.5 w-1.5 rounded-full bg-current mr-1.5"></span>
+                  ${badgeLabel} (${confPercent}%)
+                </span>
+
+                <!-- Fast Audit Button -->
+                <button onclick="sendToVerifier('${encodeURIComponent(answerRaw)}')" 
+                        title="Transfer this answer directly to the Verification Sandbox below"
+                        class="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-emerald-950/60 text-slate-300 hover:text-emerald-300 border border-slate-700 hover:border-emerald-700/60 transition flex items-center gap-1">
+                  <span>Verify in Sandbox</span>
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Answer Box -->
+            <div class="text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
+              ${answerEscaped}
+            </div>
+
+            <!-- Source Citation Cards -->
+            ${sourcesHtml}
+          </div>
+        `;
+
+        chatStream.appendChild(aiBubble);
+        chatStream.scrollTop = chatStream.scrollHeight;
+
+      } catch (err) {
+        const existingThinking = document.getElementById('thinking-bubble');
+        if (existingThinking) existingThinking.remove();
+
+        const errBubble = document.createElement('div');
+        errBubble.className = 'flex items-start space-x-3 text-sm';
+        errBubble.innerHTML = `
+          <div class="h-8 w-8 rounded-lg bg-rose-600/30 border border-rose-500/40 flex-shrink-0 flex items-center justify-center text-rose-300 text-xs font-bold">
+            !
+          </div>
+          <div class="glass-card p-4 rounded-2xl rounded-tl-sm text-rose-300 border border-rose-900/50">
+            <p class="font-medium text-xs sm:text-sm">Request Failed</p>
+            <p class="text-xs text-rose-400/90 mt-1">${escapeHtml(err.message)}</p>
+          </div>
+        `;
+        chatStream.appendChild(errBubble);
+        chatStream.scrollTop = chatStream.scrollHeight;
+      } finally {
+        submitBtn.disabled = false;
+        spinner.classList.add('hidden');
+        btnLabel.innerText = 'Ask Sentinel';
+      }
+    }
+
+    // Transfer generated answer to Verification Sandbox
+    function sendToVerifier(encodedText) {
+      const text = decodeURIComponent(encodedText);
+      const respInput = document.getElementById('verify-response-input');
+      respInput.value = text;
+      
+      const verifySection = document.getElementById('verify-section');
+      verifySection.scrollIntoView({ behavior: 'smooth' });
+      respInput.focus();
+    }
+
+    // --- 3. DIRECT TEXT VERIFICATION SANDBOX LOGIC (POST /api/v1/verify) ---
+    function loadVerifyPreset(type) {
+      const respInput = document.getElementById('verify-response-input');
+      const ctxInput = document.getElementById('verify-context-input');
+
+      if (type === 'trustworthy') {
+        respInput.value = 'Informed consent is mandatory prior to candidate screening or enrollment in any clinical study.';
+        ctxInput.value = 'Section 4: Informed consent must be acquired from all candidates prior to enrollment in clinical trials.\nSection 5: Every study participant retains the right to withdraw at any stage.';
+      } else if (type === 'fabricated') {
+        respInput.value = 'Study candidates can be enrolled immediately without informed consent if authorized by an oral telephone call.';
+        ctxInput.value = 'Section 4: Informed consent is strictly mandatory and must be documented in writing prior to any study enrollment.';
+      } else {
+        respInput.value = 'All data backups are automatically transmitted to cloud servers in Geneva every Friday.';
+        ctxInput.value = 'Data Policy: Daily encrypted backups are retained in the primary secure local on-premise vault.';
+      }
+      respInput.focus();
+    }
+
+    async function handleVerifySubmit(e) {
+      e.preventDefault();
+      const respInput = document.getElementById('verify-response-input');
+      const ctxInput = document.getElementById('verify-context-input');
+      const responseText = respInput.value.trim();
+      const contextRaw = ctxInput.value.trim();
+
+      if (!responseText) return;
+
+      const submitBtn = document.getElementById('verify-submit-btn');
+      const spinner = document.getElementById('verify-spinner');
+      const btnLabel = document.getElementById('verify-btn-label');
+      const resultsBox = document.getElementById('verify-results');
+
+      // Lock UI
+      submitBtn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnLabel.innerText = 'Auditing Claims...';
+
+      // Build payload matching VerifyRequest schema
+      const payload = { response_text: responseText };
+      if (contextRaw) {
+        payload.source_context = contextRaw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+      }
+
+      try {
+        const res = await fetch('/api/v1/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `Server returned error ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        // 1. Render Verdict Badge
+        const verdictBadge = document.getElementById('verdict-badge');
+        const verdictDesc = document.getElementById('verdict-desc');
+        const rawVerdict = (data.verdict || 'trustworthy').toLowerCase();
+
+        let verdictColor = 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+        let descText = 'Candidate claims are fully substantiated by local reference facts.';
+
+        if (rawVerdict === 'fabricated') {
+          verdictColor = 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
+          descText = 'Direct factual contradictions or severe hallucinations detected.';
+        } else if (rawVerdict === 'misleading') {
+          verdictColor = 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+          descText = 'Contains contradicted assertions or distorted factual claims.';
+        } else if (rawVerdict === 'partially_reliable') {
+          verdictColor = 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
+          descText = 'Portions of claims are neutral / lack direct grounding proof.';
+        }
+
+        verdictBadge.className = `inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${verdictColor}`;
+        verdictBadge.innerText = rawVerdict.replace('_', ' ');
+        verdictDesc.innerText = descText;
+
+        // 2. Render Numerical Metrics
+        const relScore = Number(data.reliability_score !== undefined ? data.reliability_score : 1.0);
+        const relPercent = Math.round(relScore * 100);
+        const halProb = Number(data.hallucination_probability !== undefined ? data.hallucination_probability : 0.0);
+        const halPercent = Math.round(halProb * 100);
+
+        document.getElementById('reliability-value').innerText = relScore.toFixed(2);
+        document.getElementById('reliability-pct').innerText = `${relPercent}%`;
+        document.getElementById('reliability-bar').style.width = `${relPercent}%`;
+
+        document.getElementById('hallucination-value').innerText = halProb.toFixed(2);
+        document.getElementById('hallucination-pct').innerText = `${halPercent}%`;
+        document.getElementById('hallucination-bar').style.width = `${halPercent}%`;
+
+        // 3. Highlighted Spans Annotated Text
+        const flaggedSpans = data.flagged_spans || [];
+        const annotatedBox = document.getElementById('annotated-text-box');
+
+        if (flaggedSpans.length === 0) {
+          annotatedBox.innerHTML = `<span class="text-emerald-300 font-medium">✓ ${escapeHtml(responseText)}</span>`;
+        } else {
+          let annotated = escapeHtml(responseText);
+          // Highlight each flagged span with custom highlight & tooltip reason
+          flaggedSpans.forEach(span => {
+            if (span.text && span.text.trim()) {
+              const escSpan = escapeHtml(span.text.trim());
+              const escReason = escapeHtml(span.reason || 'Flagged discrepancy');
+              const regex = new RegExp(escapeRegex(escSpan), 'g');
+              annotated = annotated.replace(regex, `<span class="flagged-highlight" data-reason="${escReason}">${escSpan}</span>`);
+            }
+          });
+          annotatedBox.innerHTML = annotated;
+        }
+
+        // 4. Flagged Spans Breakdown List
+        document.getElementById('flagged-count').innerText = flaggedSpans.length;
+        const spansContainer = document.getElementById('flagged-spans-container');
+        spansContainer.innerHTML = '';
+
+        if (flaggedSpans.length === 0) {
+          spansContainer.innerHTML = `
+            <div class="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-900/50 text-xs text-emerald-300 flex items-center space-x-2.5">
+              <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Zero factual contradictions or unsubstantiated spans detected. All candidate claims are fully verified against evidence.</span>
+            </div>
+          `;
+        } else {
+          flaggedSpans.forEach((span, idx) => {
+            const card = document.createElement('div');
+            card.className = 'p-3.5 rounded-xl bg-rose-950/30 border border-rose-900/50 text-xs space-y-1.5';
+            card.innerHTML = `
+              <div class="flex items-center justify-between">
+                <span class="font-mono text-rose-300 font-semibold bg-rose-950/80 px-2 py-0.5 rounded border border-rose-800/50">
+                  "${escapeHtml(span.text)}"
+                </span>
+                <span class="text-[10px] text-rose-400 uppercase font-bold tracking-wider bg-rose-900/40 px-2 py-0.5 rounded">
+                  Discrepancy #${idx + 1}
+                </span>
+              </div>
+              <p class="text-slate-300 text-xs leading-relaxed font-sans pt-0.5">${escapeHtml(span.reason)}</p>
+            `;
+            spansContainer.appendChild(card);
+          });
+        }
+
+        resultsBox.classList.remove('hidden');
+        resultsBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      } catch (err) {
+        alert('Verification Failed: ' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        spinner.classList.add('hidden');
+        btnLabel.innerText = 'Run Fact Audit';
+      }
+    }
+
+    // --- UTILITIES ---
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeRegex(string) {
+      return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+    }
+  </script>
+</body>
+</html>

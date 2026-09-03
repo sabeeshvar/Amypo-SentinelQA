@@ -50,23 +50,18 @@ app.include_router(v1_router)
 # Mount Dashboard and utility API routes under /api
 app.include_router(api_router, prefix="/api")
 
-# Serve frontend build if exists
-frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
-if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
-else:
-    @app.get("/")
-    def root():
-        return {
-            "system": "VeriQuery Offline AI Engine",
-            "version": settings.VERSION,
-            "status": "ONLINE",
-            "hackathon": "HackWithAMYPO 2026 (PS7 & PS2)",
-            "docs": "/docs",
-            "api_v1_health": "/api/v1/health",
-            "api_v1_ask": "/api/v1/ask",
-            "api_v1_verify": "/api/v1/verify"
-        }
+# Mount static files
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Root route serving single-page unified dashboard
+@app.get("/", response_class=FileResponse)
+def root():
+    static_index = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    if os.path.exists(static_index):
+        return FileResponse(static_index)
+    return FileResponse("backend/app/static/index.html")
 
 if __name__ == "__main__":
     import uvicorn
