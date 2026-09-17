@@ -10,19 +10,29 @@ export default function DocumentManager({ health, onRefreshHealth }) {
 
   const sampleDocs = [
     {
-      name: 'enterprise_security_policy.md',
+      name: 'placement_eligibility.md',
       type: 'Markdown',
-      topics: 'MFA, 16-Char Passwords, TLS 1.3, P1-P4 Incident SLAs, 7-Yr Retention',
+      topics: 'Min CGPA 7.5, 75% Attendance, 0 Active Arrears, General Eligibility',
     },
     {
-      name: 'cloud_infrastructure_sop.md',
+      name: 'placement_process.md',
       type: 'Markdown',
-      topics: '6-Hr Snapshots, 15-min DR RTO, 5-min RPO, Kubernetes HPA scaling',
+      topics: '7-Stage Lifecycle: Registration, Resume, Screening, Training, Assessment, Interviews',
     },
     {
-      name: 'clinical_trial_guidelines.md',
+      name: 'attendance_policy.md',
       type: 'Markdown',
-      topics: 'Phase 3 50mg Compound-Q2, 24-hr SAE Reporting, Exclusion criteria',
+      topics: '75% Mandatory Attendance, Placement Debarment, Condonation Regulations',
+    },
+    {
+      name: 'academic_rules.md',
+      type: 'Markdown',
+      topics: 'CIA 40% & ESE 60% Weightage, Passing Rules, Arrears & Credit Progression',
+    },
+    {
+      name: 'company_requirements.md',
+      type: 'Markdown',
+      topics: 'Company A (CGPA 7.5), Company B (CGPA 7.0), Company C (CGPA 8.0)',
     },
   ];
 

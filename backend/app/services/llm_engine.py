@@ -10,17 +10,29 @@ class LocalLLMEngine:
     def __init__(self, base_url: str = settings.OLLAMA_BASE_URL, default_model: str = settings.OLLAMA_MODEL):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
+        self._last_ollama_check = 0.0
+        self._ollama_status = False
 
     def is_ollama_available(self) -> bool:
-        """Tests if the local Ollama instance is reachable."""
+        """Tests if the local Ollama instance is reachable with 15-second cache."""
+        import time
+        now = time.time()
+        if now - self._last_ollama_check < 15.0:
+            return self._ollama_status
+
+        self._last_ollama_check = now
         try:
-            r = requests.get(f"{self.base_url}/api/tags", timeout=1.5)
-            return r.status_code == 200
+            r = requests.get(f"{self.base_url}/api/tags", timeout=0.5)
+            self._ollama_status = (r.status_code == 200)
         except Exception:
-            return False
+            self._ollama_status = False
+        return self._ollama_status
 
     def generate_rag_answer(self, query: str, context_chunks: List[SourceChunk], model_name: Optional[str] = None) -> str:
         """Generates an answer strictly grounded in the provided context chunks."""
+        if not context_chunks:
+            return "The requested information is not available in the local indexed documents."
+
         active_model = model_name or self.default_model
         
         # Build strict context string
@@ -34,7 +46,7 @@ class LocalLLMEngine:
             "Your task is to answer the user's question using ONLY the provided Source Documents below.\n"
             "Rules:\n"
             "1. Do not introduce outside information or make assumptions not directly stated in the sources.\n"
-            "2. If the answer cannot be determined from the context, clearly state: 'The provided documents do not contain sufficient information to answer this question.'\n"
+            "2. If the answer cannot be determined from the context or is not found in the documents, clearly state: 'The requested information is not available in the local indexed documents.'\n"
             "3. State your claims clearly and concisely so they can be verified.\n"
             "4. Include inline citations like [Source 1], [Source 2] matching the sources used."
         )
@@ -55,7 +67,9 @@ class LocalLLMEngine:
                 res = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=20.0)
                 if res.status_code == 200:
                     data = res.json()
-                    return data.get("response", "").strip()
+                    resp_text = data.get("response", "").strip()
+                    if resp_text:
+                        return resp_text
             except Exception as e:
                 print(f"[LLMEngine] Ollama request failed: {e}. Falling back to offline local synthesis.")
 
@@ -97,27 +111,36 @@ class LocalLLMEngine:
     def _offline_synthesize_answer(self, query: str, context_chunks: List[SourceChunk]) -> str:
         """Synthesizes a clean factual answer from context chunks when Ollama is offline."""
         if not context_chunks:
-            return "The local knowledge base does not contain relevant documents to answer this query. Please ingest relevant documents."
+            return "The requested information is not available in the local indexed documents."
 
-        # Extract the highest similarity sentences matching the query terms
-        query_words = set(re.findall(r"\w+", query.lower()))
+        stop_words = {
+            "what", "is", "are", "the", "for", "of", "in", "on", "at", "to", "a", "an", "and",
+            "or", "be", "this", "that", "it", "how", "why", "who", "which", "where", "when",
+            "can", "do", "does", "did", "from", "by", "with", "about", "as", "any", "some", "tell", "me"
+        }
+        raw_query_words = set(re.findall(r"\w+", query.lower()))
+        query_words = raw_query_words - stop_words
+
+        if not query_words:
+            query_words = raw_query_words
+
         matched_sentences = []
         
         for i, chunk in enumerate(context_chunks):
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', chunk.content) if len(s.strip()) > 15]
             for s in sentences:
-                s_words = set(re.findall(r"\w+", s.lower()))
+                s_words = set(re.findall(r"\w+", s.lower())) - stop_words
                 overlap = len(query_words.intersection(s_words))
                 if overlap > 0:
                     matched_sentences.append((overlap, f"{s} [Source {i+1}: {chunk.doc_name}]"))
 
+        if not matched_sentences:
+            return "The requested information is not available in the local indexed documents."
+
         matched_sentences.sort(key=lambda x: x[0], reverse=True)
         top_sentences = [s[1] for s in matched_sentences[:4]]
 
-        if top_sentences:
-            return "Based on the verified offline documentation: " + " ".join(top_sentences)
-        else:
-            return f"According to [Source 1: {context_chunks[0].doc_name}]: {context_chunks[0].content[:300]}..."
+        return "Based on the verified offline documentation: " + " ".join(top_sentences)
 
     def _offline_rule_sql_generator(self, natural_query: str) -> Dict[str, str]:
         """Provides instant SQL generation for standard enterprise audit & incident queries."""

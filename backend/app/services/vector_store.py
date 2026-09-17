@@ -75,7 +75,7 @@ class VectorStoreService:
             if chromadb is not None:
                 self.client = chromadb.PersistentClient(path=self.persist_dir)
                 self.collection = self.client.get_or_create_collection(
-                    name="veriquery_knowledge_base",
+                    name="sentinelqa_documents",
                     metadata={"hnsw:space": "cosine"}
                 )
                 print(f"[VectorStore] ChromaDB initialized at {self.persist_dir}. Document count: {self.collection.count()}")
@@ -187,9 +187,12 @@ class VectorStoreService:
         self._memory_docs = []
         if self.client is not None:
             try:
-                self.client.delete_collection("veriquery_knowledge_base")
+                try:
+                    self.client.delete_collection("sentinelqa_documents")
+                except Exception:
+                    pass
                 self.collection = self.client.get_or_create_collection(
-                    name="veriquery_knowledge_base",
+                    name="sentinelqa_documents",
                     metadata={"hnsw:space": "cosine"}
                 )
             except Exception as e:

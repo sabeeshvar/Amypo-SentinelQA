@@ -94,14 +94,19 @@ class DocumentIngestionService:
 
         metadatas = [
             {
+                "record_id": f"{filename}_chunk_{i}",
+                "source_file": filename,
                 "source": filename,
+                "document_type": doc_type,
                 "doc_type": doc_type,
+                "chunk_id": f"{filename}_chunk_{i}",
                 "chunk_index": i,
-                "total_chunks": len(chunks)
+                "total_chunks": len(chunks),
+                "snippet": chunks[i][:350]
             }
             for i in range(len(chunks))
         ]
-        ids = [f"{filename}_{i}_{hash(chunks[i]) % 100000}" for i in range(len(chunks))]
+        ids = [f"{filename}_chunk_{i}" for i in range(len(chunks))]
 
         vector_store_service.add_documents(documents=chunks, metadatas=metadatas, ids=ids)
         return len(chunks)

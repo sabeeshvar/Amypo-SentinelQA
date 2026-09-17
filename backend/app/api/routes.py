@@ -42,19 +42,22 @@ def v1_ask(req: AskRequest):
     # 2. Local LLM answer generation (100% offline)
     answer = llm_engine.generate_rag_answer(req.question, source_chunks)
 
-    # 3. Format sources into record_id & snippet
+    # 3. Handle ungrounded / out-of-dataset cases
+    is_unavailable = "not available in the local indexed documents" in answer.lower() or "not contain sufficient information" in answer.lower()
+
     formatted_sources: List[AskSource] = []
-    for chunk in source_chunks:
-        formatted_sources.append(
-            AskSource(
-                record_id=str(chunk.chunk_id),
-                snippet=chunk.content[:350]
+    if not is_unavailable:
+        for chunk in source_chunks:
+            formatted_sources.append(
+                AskSource(
+                    record_id=str(chunk.chunk_id),
+                    snippet=chunk.content[:350]
+                )
             )
-        )
 
     # 4. Compute confidence (groundedness / faithfulness score)
-    confidence = 0.50
-    if source_chunks:
+    confidence = 0.0
+    if not is_unavailable and source_chunks:
         claims, report = hallucination_engine.verify_answer(answer, source_chunks)
         confidence = round(max(0.0, min(1.0, report.overall_score / 100.0)), 2)
     else:
@@ -386,19 +389,19 @@ def get_hackathon_benchmarks():
         BenchmarkCase(
             id="BENCH-PS7-02",
             category="PS7_RAG",
-            prompt="What is the response SLA and resolution target for a P1 Critical security incident?",
-            expected_outcome="Retrieves POL-SEC-2026. Answers 15 minutes response SLA and 4 hours resolution target."
+            prompt="What is the minimum CGPA and attendance required for placement eligibility?",
+            expected_outcome="Retrieves placement_eligibility.md. Answers minimum CGPA 7.5 and 75% aggregate attendance."
         ),
         BenchmarkCase(
             id="BENCH-PS2-01",
             category="PS2_FACTUAL",
-            prompt="Is SMS authentication allowed according to company cybersecurity policy?",
-            expected_outcome="Detects that SMS authentication is strictly prohibited; verifies Entailment with 100% Reliability score."
+            prompt="Are students with active arrears eligible for placement drives?",
+            expected_outcome="Detects that students with active arrears are strictly not eligible; verifies Entailment with high Reliability score."
         ),
         BenchmarkCase(
             id="BENCH-PS2-02",
             category="PS2_HALLUCINATED",
-            prompt="Verify this claim against Cloud DR SOP: 'The RTO failover guarantee is 60 minutes and backups run once a week.'",
-            expected_outcome="Flags direct CONTRADICTION (actual RTO is 15 minutes, snapshots every 6 hours). Triggers Hallucination Warning."
+            prompt="Verify this claim against Company A rules: 'Company A allows up to 2 active arrears and requires a 6.0 CGPA.'",
+            expected_outcome="Flags direct CONTRADICTION (Company A requires CGPA 7.5 and 0 active arrears). Triggers Hallucination Warning."
         )
     ]

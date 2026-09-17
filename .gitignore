@@ -45,7 +45,10 @@ yarn-error.log*
 
 # Local ChromaDB cache & temp databases (keep sample_docs and sample_db seed script)
 data/chroma_db/
+backend/data/chroma_db/
+backend/data/chroma/
 *.sqlite-journal
+*.log
 
 # IDEs & System
 .idea/

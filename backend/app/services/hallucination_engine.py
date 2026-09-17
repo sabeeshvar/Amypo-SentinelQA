@@ -27,52 +27,47 @@ class LocalNLIModel:
                 self.cross_encoder = None
 
     def predict_pair(self, premise: str, hypothesis: str) -> Tuple[ClaimStatus, float, float, float, float]:
+        """Calculates probabilities for a single premise-hypothesis pair."""
+        results = self.predict_batch([(premise, hypothesis)])
+        return results[0]
+
+    def predict_batch(self, pairs: List[Tuple[str, str]]) -> List[Tuple[ClaimStatus, float, float, float, float]]:
         """
-        Calculates probabilities for [Contradiction, Entailment, Neutral].
-        Returns (Status, Confidence, Entailment_prob, Neutral_prob, Contradiction_prob).
+        Batched prediction for [(premise, hypothesis), ...].
+        Returns list of (Status, Confidence, Entailment_prob, Neutral_prob, Contradiction_prob).
         """
+        if not pairs:
+            return []
+
         if self.cross_encoder is not None:
             try:
-                raw_preds = self.cross_encoder.predict([(premise, hypothesis)])
-                scores = raw_preds[0] if hasattr(raw_preds, "__getitem__") and len(raw_preds) > 0 else raw_preds
+                raw_preds = self.cross_encoder.predict(pairs)
+                if len(pairs) == 1 and not (hasattr(raw_preds[0], "__iter__")):
+                    raw_preds = [raw_preds]
                 
-                # Softmax conversion
-                exp_scores = [math.exp(float(s)) for s in scores]
-                sum_exp = sum(exp_scores)
-                probs = [s / sum_exp for s in exp_scores]
-                
-                # DeBERTa NLI standard indices: 0: contradiction, 1: entailment, 2: neutral
-                contra_p = float(probs[0])
-                entail_p = float(probs[1]) if len(probs) > 1 else 0.0
-                neutral_p = float(probs[2]) if len(probs) > 2 else 0.0
+                results = []
+                for scores in raw_preds:
+                    # Softmax conversion
+                    exp_scores = [math.exp(float(s)) for s in scores]
+                    sum_exp = sum(exp_scores) or 1.0
+                    probs = [s / sum_exp for s in exp_scores]
+                    
+                    contra_p = float(probs[0])
+                    entail_p = float(probs[1]) if len(probs) > 1 else 0.0
+                    neutral_p = float(probs[2]) if len(probs) > 2 else 0.0
 
-                # Check if id2label overrides ordering
-                try:
-                    cfg = getattr(self.cross_encoder, "config", None) or getattr(getattr(self.cross_encoder, "model", None), "config", None)
-                    id2label = getattr(cfg, "id2label", None)
-                    if id2label and isinstance(id2label, dict):
-                        for idx, prob in enumerate(probs):
-                            val = id2label.get(idx) if idx in id2label else id2label.get(str(idx), "")
-                            lbl = str(val).lower()
-                            if "entail" in lbl:
-                                entail_p = float(prob)
-                            elif "contra" in lbl:
-                                contra_p = float(prob)
-                            elif "neut" in lbl:
-                                neutral_p = float(prob)
-                except Exception:
-                    pass
-
-                if entail_p >= settings.ENTAILMENT_THRESHOLD and entail_p > contra_p and entail_p > neutral_p:
-                    return ClaimStatus.ENTAILED, entail_p, entail_p, neutral_p, contra_p
-                elif contra_p >= settings.CONTRADICTION_THRESHOLD and contra_p > entail_p:
-                    return ClaimStatus.CONTRADICTION, contra_p, entail_p, neutral_p, contra_p
-                else:
-                    return ClaimStatus.NEUTRAL, neutral_p, entail_p, neutral_p, contra_p
+                    if entail_p >= settings.ENTAILMENT_THRESHOLD and entail_p > contra_p and entail_p > neutral_p:
+                        results.append((ClaimStatus.ENTAILED, entail_p, entail_p, neutral_p, contra_p))
+                    elif contra_p >= settings.CONTRADICTION_THRESHOLD and contra_p > entail_p:
+                        results.append((ClaimStatus.CONTRADICTION, contra_p, entail_p, neutral_p, contra_p))
+                    else:
+                        results.append((ClaimStatus.NEUTRAL, neutral_p, entail_p, neutral_p, contra_p))
+                return results
             except Exception as e:
-                print(f"[NLI Engine] CrossEncoder prediction error: {e}")
+                print(f"[NLI Engine] CrossEncoder batch prediction error: {e}")
 
-        # High-Performance Deterministic Semantic NLI Heuristic (Sub-5ms, Zero RAM overhead)
+        # High-Performance Deterministic Semantic NLI Heuristic (Sub-5ms)
+        return [self._semantic_heuristic_nli(p, h) for p, h in pairs]
         return self._semantic_heuristic_nli(premise, hypothesis)
 
     def _semantic_heuristic_nli(self, premise: str, hypothesis: str) -> Tuple[ClaimStatus, float, float, float, float]:
@@ -194,15 +189,29 @@ class HallucinationVerificationEngine:
             if not source_chunks:
                 best_reasoning = "Zero source documents available in context."
             else:
-                # Compare claim against all retrieved chunks and their constituent sentences
-                cand_results = []
+                # Compare claim against top matching candidates across chunks
+                claim_words = set(re.findall(r"\b[a-z0-9_]{3,}\b", claim.lower()))
+                scored_cands = []
+
                 for chunk in source_chunks:
                     chunk_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+|\n+', chunk.content) if len(s.strip()) > 10]
-                    candidates = [chunk.content] + chunk_sentences
+                    for s in [chunk.content] + chunk_sentences:
+                        s_words = set(re.findall(r"\b[a-z0-9_]{3,}\b", s.lower()))
+                        overlap = len(s_words.intersection(claim_words))
+                        scored_cands.append((overlap, chunk, s))
 
-                    for premise_cand in candidates:
-                        status, conf, ep, np, cp = self.nli_model.predict_pair(premise_cand, claim)
-                        cand_results.append((status, conf, ep, np, cp, chunk, premise_cand))
+                scored_cands.sort(key=lambda x: x[0], reverse=True)
+                top_cands = scored_cands[:4] if scored_cands else []
+
+                cand_pairs = [(c[2], claim) for c in top_cands]
+                cand_meta = [(c[1], c[2]) for c in top_cands]
+
+                # Batch NLI evaluation
+                batch_preds = self.nli_model.predict_batch(cand_pairs)
+                cand_results = [
+                    (pred[0], pred[1], pred[2], pred[3], pred[4], meta[0], meta[1])
+                    for pred, meta in zip(batch_preds, cand_meta)
+                ]
 
                 # 1. Check if ANY candidate sentence conclusively ENTAILS the claim
                 entailed_candidates = [c for c in cand_results if c[0] == ClaimStatus.ENTAILED]
