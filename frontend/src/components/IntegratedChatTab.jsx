@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
+import { renderMarkdown, parseSourceItem } from '../utils/markdown';
 
 export default function IntegratedChatTab() {
   const [question, setQuestion] = useState('');
@@ -101,19 +102,23 @@ export default function IntegratedChatTab() {
 
   // Highlight flagged spans within the generated answer
   const renderHighlightedAnswer = (answerText, flaggedSpans = []) => {
+    const renderedHtml = renderMarkdown(answerText);
+
     if (!flaggedSpans || flaggedSpans.length === 0) {
       return (
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-100 leading-relaxed font-sans text-sm">
-          {answerText}
-        </div>
+        <div 
+          className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-100 leading-relaxed font-sans text-sm markdown-content"
+          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+        />
       );
     }
 
     return (
       <div className="space-y-3">
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-100 leading-relaxed font-sans text-sm">
-          {answerText}
-        </div>
+        <div 
+          className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-100 leading-relaxed font-sans text-sm markdown-content"
+          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+        />
         <div className="space-y-2">
           <p className="text-xs font-mono uppercase tracking-wider text-amber-400 font-semibold flex items-center gap-1.5">
             ⚠️ Flagged Spans & Fact Contradictions ({flaggedSpans.length}):
@@ -226,35 +231,53 @@ export default function IntegratedChatTab() {
           <div className="bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>📚</span> Verified Source Citations ({response.sources.length})
+                <span>📚</span> Sources ({response.sources.length})
               </h3>
-              <span className="text-[11px] font-mono text-slate-400">Click to inspect snippet</span>
+              <span className="text-[11px] font-mono text-slate-400">Verified Evidence</span>
             </div>
 
-            <div className="space-y-2.5">
-              {response.sources.map((src, index) => (
-                <div
-                  key={index}
-                  onClick={() => setSelectedSource(selectedSource === src.record_id ? null : src.record_id)}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                    selectedSource === src.record_id
-                      ? 'bg-emerald-950/20 border-emerald-500/50 text-emerald-200 shadow-md'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-xs font-mono mb-1">
-                    <span className="text-emerald-400 font-semibold">
-                      Record: {src.record_id}
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      {selectedSource === src.record_id ? '▲ Collapse' : '▼ Expand'}
-                    </span>
+            <div className="space-y-3">
+              {response.sources.map((rawSrc, index) => {
+                const src = parseSourceItem(rawSrc, index);
+                const isSelected = selectedSource === src.recordId;
+                return (
+                  <div
+                    key={index}
+                    onClick={() => setSelectedSource(isSelected ? null : src.recordId)}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-emerald-950/20 border-emerald-500/50 text-emerald-200 shadow-md'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-xs mb-1.5 pb-1.5 border-b border-slate-800/60">
+                      <div className="flex items-center space-x-2 truncate">
+                        <span className="text-[11px] font-mono font-bold text-indigo-400 bg-indigo-950/70 border border-indigo-800/50 px-1.5 py-0.5 rounded">
+                          [{src.citationNumber}]
+                        </span>
+                        <span className="font-semibold text-slate-200 truncate">
+                          📄 {src.filename}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">
+                        {src.chunkLabel || `Citation #${src.citationNumber}`}
+                      </span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-500 mb-2 truncate">
+                      Record ID: <span className="text-slate-400">{src.recordId}</span>
+                    </div>
+                    <div className="text-xs leading-relaxed font-sans bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block mb-1">
+                        Relevant Snippet ({isSelected ? 'Full' : 'Click to Expand'}):
+                      </span>
+                      <div 
+                        className={isSelected ? '' : 'line-clamp-3'}
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(src.snippet) }}
+                      />
+                    </div>
                   </div>
-                  <p className={`text-xs leading-relaxed text-slate-300 ${selectedSource === src.record_id ? '' : 'line-clamp-2'}`}>
-                    {src.snippet}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

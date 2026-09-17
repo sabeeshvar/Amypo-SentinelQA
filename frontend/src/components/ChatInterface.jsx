@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Send, Shield, Zap, Sparkles, Database, FileCheck, RefreshCw, AlertCircle } from 'lucide-react';
 import MetricsCard from './MetricsCard';
 import SentenceHeatmap from './SentenceHeatmap';
+import { renderMarkdown } from '../utils/markdown';
 
 export default function ChatInterface({
   onRunQuery,
@@ -208,9 +209,10 @@ export default function ChatInterface({
             )}
 
             {/* Answer Text */}
-            <div className="text-sm text-slate-200 leading-relaxed font-sans bg-slate-900/40 p-4 rounded-xl border border-slate-800/80">
-              {currentResult.answer}
-            </div>
+            <div 
+              className="text-sm text-slate-200 leading-relaxed font-sans bg-slate-900/40 p-4 rounded-xl border border-slate-800/80 markdown-content"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(currentResult.answer) }}
+            />
 
             {/* Sentence-by-Sentence Groundedness Heatmap */}
             <SentenceHeatmap
